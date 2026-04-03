@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: ario-ffmpeg-server
+    env: node
+    region: singapore
+    plan: free
+    buildCommand: npm install && apt-get update && apt-get install -y ffmpeg
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
