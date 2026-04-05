@@ -1,3 +1,4 @@
+const axios = require('axios');
 const express = require('express');
 const ffmpeg = require('fluent-ffmpeg');
 const multer = require('multer');
@@ -17,7 +18,64 @@ app.get('/', (req, res) => {
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
+app.post('/compose-from-comfyui', async (req, res) => {
+  const jobId = uuidv4();
+  const tmpDir = `/tmp/job_${jobId}`;
+  try {
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const { prompt_id, comfyui_url, audio, fps = 8, resolution = '854x480' } = req.body;
+    if (!prompt_id || !comfyui_url) return res.status(400).json({ error: 'prompt_id と comfyui_url が必要です' });
+    if (!audio) return res.status(400).json({ error: 'audio が必要です' });
 
+    let historyRes;
+    for (let attempt = 0; attempt < 30; attempt++) {
+      historyRes = await axios.get(`${comfyui_url}/history/${prompt_id}`);
+      if (historyRes.data[prompt_id]?.outputs) break;
+      await new Promise(r => setTimeout(r, 3000));
+    }
+    const outputs = historyRes.data[prompt_id]?.outputs;
+    if (!outputs) return res.status(500).json({ error: '画像生成タイムアウト' });
+
+    const images = [];
+    for (const nodeId of Object.keys(outputs)) {
+      for (const img of (outputs[nodeId].images || [])) {
+        const imgRes = await axios.get(`${comfyui_url}/view?filename=${img.filename}&subfolder=${img.subfolder}&type=${img.type}`, { responseType: 'arraybuffer' });
+        images.push(Buffer.from(imgRes.data).toString('base64'));
+      }
+    }
+
+    for (let i = 0; i < images.length; i++) {
+      const imgPath = path.join(tmpDir, `frame_${String(i).padStart(4, '0')}.jpg`);
+      fs.writeFileSync(imgPath, Buffer.from(images[i], 'base64'));
+    }
+    const audioPath = path.join(tmpDir, 'audio.wav');
+    fs.writeFileSync(audioPath, Buffer.from(audio.replace(/^data:audio\/\w+;base64,/, ''), 'base64'));
+    const outputPath = path.join(tmpDir, 'output.mp4');
+    const [width, height] = resolution.split('x').map(Number);
+    await new Promise((resolve, reject) => {
+      ffmpeg()
+        .input(path.join(tmpDir, 'frame_%04d.jpg'))
+        .inputOptions([`-framerate ${fps}`])
+        .input(audioPath)
+        .outputOptions([
+          '-c:v libx264', '-crf 23', '-preset fast',
+          '-c:a aac', '-b:a 128k',
+          `-vf scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`,
+          '-shortest', '-movflags +faststart', '-pix_fmt yuv420p',
+        ])
+        .output(outputPath)
+        .on('end', resolve)
+        .on('error', reject)
+        .run();
+    });
+    const videoBase64 = fs.readFileSync(outputPath).toString('base64');
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    res.json({ status: 'ok', video: `data:video/mp4;base64,${videoBase64}` });
+  } catch (err) {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    res.status(500).json({ error: err.message });
+  }
+});
 app.post('/compose', async (req, res) => {
   const jobId = uuidv4();
   const tmpDir = `/tmp/job_${jobId}`;
