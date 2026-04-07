@@ -9,6 +9,23 @@ const { v4: uuidv4 } = require('uuid');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ dest: '/tmp/uploads/' });
+const zlib = require('zlib');
+
+app.use((req, res, next) => {
+  if (req.path === '/upload-audio' && req.headers['content-encoding'] === 'gzip') {
+    const gunzip = zlib.createGunzip();
+    const chunks = [];
+    req.pipe(gunzip);
+    gunzip.on('data', chunk => chunks.push(chunk));
+    gunzip.on('end', () => {
+      req.body = Buffer.concat(chunks);
+      next();
+    });
+    gunzip.on('error', next);
+  } else {
+    next();
+  }
+});
 app.use(express.json({ limit: '50mb' }));
 
 app.get('/', (req, res) => {
