@@ -20,14 +20,14 @@ app.get('/health', (req, res) => {
 });
 
 // 音声を一時保存してjob_idを返す
-app.post('/upload-audio', upload.single('audio'), async (req, res) => {
+app.post('/upload-audio', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'audio file が必要です' });
+    if (!req.body || req.body.length === 0) return res.status(400).json({ error: 'audio data が必要です' });
     const jobId = uuidv4();
     const audioDir = '/tmp/audio';
     fs.mkdirSync(audioDir, { recursive: true });
     const audioPath = path.join(audioDir, `${jobId}.wav`);
-    fs.renameSync(req.file.path, audioPath);
+    fs.writeFileSync(audioPath, req.body);
     res.json({ status: 'ok', job_id: jobId });
   } catch (err) {
     res.status(500).json({ error: err.message });
