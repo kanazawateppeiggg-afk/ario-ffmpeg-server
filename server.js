@@ -18,14 +18,34 @@ app.get('/', (req, res) => {
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
+
+// 音声を一時保存してjob_idを返す
+app.post('/upload-audio', upload.single('audio'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'audio file が必要です' });
+    const jobId = uuidv4();
+    const audioDir = '/tmp/audio';
+    fs.mkdirSync(audioDir, { recursive: true });
+    const audioPath = path.join(audioDir, `${jobId}.wav`);
+    fs.renameSync(req.file.path, audioPath);
+    res.json({ status: 'ok', job_id: jobId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/compose-from-comfyui', async (req, res) => {
   const jobId = uuidv4();
   const tmpDir = `/tmp/job_${jobId}`;
   try {
     fs.mkdirSync(tmpDir, { recursive: true });
-    const { prompt_id, comfyui_url, audio, fps = 8, resolution = '854x480' } = req.body;
+    const { prompt_id, comfyui_url, audio_job_id, fps = 8, resolution = '854x480' } = req.body;
     if (!prompt_id || !comfyui_url) return res.status(400).json({ error: 'prompt_id と comfyui_url が必要です' });
-    if (!audio) return res.status(400).json({ error: 'audio が必要です' });
+    if (!audio_job_id) return res.status(400).json({ error: 'audio_job_id が必要です' });
+
+    // 一時保存した音声を取得
+    const audioSrcPath = `/tmp/audio/${audio_job_id}.wav`;
+    if (!fs.existsSync(audioSrcPath)) return res.status(400).json({ error: 'audio_job_id が無効か期限切れです' });
 
     let historyRes;
     for (let attempt = 0; attempt < 30; attempt++) {
@@ -48,14 +68,10 @@ app.post('/compose-from-comfyui', async (req, res) => {
       const imgPath = path.join(tmpDir, `frame_${String(i).padStart(4, '0')}.jpg`);
       fs.writeFileSync(imgPath, Buffer.from(images[i], 'base64'));
     }
+
     const audioPath = path.join(tmpDir, 'audio.wav');
-    let audioBuffer;
-if (typeof audio === 'string') {
-  audioBuffer = Buffer.from(audio.replace(/^data:audio\/\w+;base64,/, ''), 'base64');
-} else {
-  audioBuffer = Buffer.from(audio);
-}
-fs.writeFileSync(audioPath, audioBuffer);
+    fs.copyFileSync(audioSrcPath, audioPath);
+
     const outputPath = path.join(tmpDir, 'output.mp4');
     const [width, height] = resolution.split('x').map(Number);
     await new Promise((resolve, reject) => {
@@ -76,12 +92,14 @@ fs.writeFileSync(audioPath, audioBuffer);
     });
     const videoBase64 = fs.readFileSync(outputPath).toString('base64');
     fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.unlinkSync(audioSrcPath);
     res.json({ status: 'ok', video: `data:video/mp4;base64,${videoBase64}` });
   } catch (err) {
     fs.rmSync(tmpDir, { recursive: true, force: true });
     res.status(500).json({ error: err.message });
   }
 });
+
 app.post('/compose', async (req, res) => {
   const jobId = uuidv4();
   const tmpDir = `/tmp/job_${jobId}`;
