@@ -35,7 +35,7 @@ app.get('/', (req, res) => {
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
-// 音声を一時保存してjob_idを返す
+
 app.post('/upload-audio', express.raw({ type: '*/*', limit: '10mb' }), async (req, res) => {
   console.log('upload-audio body length:', req.body ? req.body.length : 'null/undefined');
   try {
@@ -55,77 +55,95 @@ app.post('/upload-audio', express.raw({ type: '*/*', limit: '10mb' }), async (re
 app.post('/compose-from-comfyui', async (req, res) => {
   const jobId = uuidv4();
   const tmpDir = `/tmp/job_${jobId}`;
-  try {
-    fs.mkdirSync(tmpDir, { recursive: true });
-   const { prompt_id, comfyui_url, audio_job_id, audio, fps = 8, resolution = '854x480' } = req.body;
-    if (!prompt_id || !comfyui_url) return res.status(400).json({ error: 'prompt_id と comfyui_url が必要です' });
-    if (!audio_job_id && !audio) return res.status(400).json({ error: 'audio_job_id か audio が必要です' });
 
-    // 音声ファイルのパスを決定
-    let audioSrcPath;
-    if (audio_job_id) {
-      audioSrcPath = `/tmp/audio/${audio_job_id}.wav`;
-      if (!fs.existsSync(audioSrcPath)) return res.status(400).json({ error: 'audio_job_id が無効か期限切れです' });
-    } else {
-      audioSrcPath = `/tmp/audio/inline_${uuidv4()}.wav`;
-      fs.mkdirSync('/tmp/audio', { recursive: true });
-      const base64Data = audio.replace(/^data:audio\/\w+;base64,/, '');
-      fs.writeFileSync(audioSrcPath, Buffer.from(base64Data, 'base64'));
-      console.log('inline audio saved, size:', fs.statSync(audioSrcPath).size);
-    }
+  const { prompt_id, comfyui_url, audio_job_id, audio, fps = 8, resolution = '854x480' } = req.body;
+  if (!prompt_id || !comfyui_url) return res.status(400).json({ error: 'prompt_id と comfyui_url が必要です' });
+  if (!audio_job_id && !audio) return res.status(400).json({ error: 'audio_job_id か audio が必要です' });
 
-    let historyRes;
-    for (let attempt = 0; attempt < 30; attempt++) {
-      historyRes = await axios.get(`${comfyui_url}/history/${prompt_id}`);
-      if (historyRes.data[prompt_id]?.outputs) break;
-      await new Promise(r => setTimeout(r, 3000));
-    }
-    const outputs = historyRes.data[prompt_id]?.outputs;
-    if (!outputs) return res.status(500).json({ error: '画像生成タイムアウト' });
+  res.json({ status: 'processing', job_id: jobId });
 
-    const images = [];
-    for (const nodeId of Object.keys(outputs)) {
-      for (const img of (outputs[nodeId].images || [])) {
-        const imgRes = await axios.get(`${comfyui_url}/view?filename=${img.filename}&subfolder=${img.subfolder}&type=${img.type}`, { responseType: 'arraybuffer' });
-        images.push(Buffer.from(imgRes.data).toString('base64'));
-        console.log('image downloaded, size:', imgRes.data.byteLength);
+  (async () => {
+    try {
+      fs.mkdirSync(tmpDir, { recursive: true });
+
+      let audioSrcPath;
+      if (audio_job_id) {
+        audioSrcPath = `/tmp/audio/${audio_job_id}.wav`;
+        if (!fs.existsSync(audioSrcPath)) throw new Error('audio_job_id が無効か期限切れです');
+      } else {
+        audioSrcPath = `/tmp/audio/inline_${uuidv4()}.wav`;
+        fs.mkdirSync('/tmp/audio', { recursive: true });
+        const base64Data = audio.replace(/^data:audio\/\w+;base64,/, '');
+        fs.writeFileSync(audioSrcPath, Buffer.from(base64Data, 'base64'));
+        console.log('inline audio saved, size:', fs.statSync(audioSrcPath).size);
       }
+
+      let historyRes;
+      for (let attempt = 0; attempt < 30; attempt++) {
+        historyRes = await axios.get(`${comfyui_url}/history/${prompt_id}`);
+        if (historyRes.data[prompt_id]?.outputs) break;
+        await new Promise(r => setTimeout(r, 3000));
+      }
+      const outputs = historyRes.data[prompt_id]?.outputs;
+      if (!outputs) throw new Error('画像生成タイムアウト');
+
+      const images = [];
+      for (const nodeId of Object.keys(outputs)) {
+        for (const img of (outputs[nodeId].images || [])) {
+          const imgRes = await axios.get(`${comfyui_url}/view?filename=${img.filename}&subfolder=${img.subfolder}&type=${img.type}`, { responseType: 'arraybuffer' });
+          images.push(Buffer.from(imgRes.data).toString('base64'));
+          console.log('image downloaded, size:', imgRes.data.byteLength);
+        }
+      }
+
+      for (let i = 0; i < images.length; i++) {
+        const imgPath = path.join(tmpDir, `frame_${String(i).padStart(4, '0')}.jpg`);
+        fs.writeFileSync(imgPath, Buffer.from(images[i], 'base64'));
+      }
+
+      const audioPath = path.join(tmpDir, 'audio.wav');
+      fs.copyFileSync(audioSrcPath, audioPath);
+
+      const outputPath = path.join(tmpDir, 'output.mp4');
+      const [width, height] = resolution.split('x').map(Number);
+      await new Promise((resolve, reject) => {
+        ffmpeg()
+          .input(path.join(tmpDir, 'frame_%04d.jpg'))
+          .inputOptions([`-framerate ${fps}`])
+          .input(audioPath)
+          .outputOptions([
+            '-c:v libx264', '-crf 23', '-preset fast',
+            '-c:a aac', '-b:a 128k',
+            `-vf scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`,
+            '-shortest', '-movflags +faststart', '-pix_fmt yuv420p',
+          ])
+          .output(outputPath)
+          .on('end', resolve)
+          .on('error', reject)
+          .run();
+      });
+
+      const videoBase64 = fs.readFileSync(outputPath).toString('base64');
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      fs.unlinkSync(audioSrcPath);
+      fs.writeFileSync(`/tmp/result_${jobId}.json`, JSON.stringify({ status: 'done', video: `data:video/mp4;base64,${videoBase64}` }));
+      console.log('job done:', jobId);
+    } catch (err) {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      fs.writeFileSync(`/tmp/result_${jobId}.json`, JSON.stringify({ status: 'error', error: err.message }));
+      console.log('job error:', jobId, err.message);
     }
+  })();
+});
 
-    for (let i = 0; i < images.length; i++) {
-      const imgPath = path.join(tmpDir, `frame_${String(i).padStart(4, '0')}.jpg`);
-      fs.writeFileSync(imgPath, Buffer.from(images[i], 'base64'));
-    }
-
-    const audioPath = path.join(tmpDir, 'audio.wav');
-    fs.copyFileSync(audioSrcPath, audioPath);
-
-    const outputPath = path.join(tmpDir, 'output.mp4');
-    const [width, height] = resolution.split('x').map(Number);
-    await new Promise((resolve, reject) => {
-      ffmpeg()
-        .input(path.join(tmpDir, 'frame_%04d.jpg'))
-        .inputOptions([`-framerate ${fps}`])
-        .input(audioPath)
-        .outputOptions([
-          '-c:v libx264', '-crf 23', '-preset fast',
-          '-c:a aac', '-b:a 128k',
-          `-vf scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`,
-          '-shortest', '-movflags +faststart', '-pix_fmt yuv420p',
-        ])
-        .output(outputPath)
-        .on('end', resolve)
-        .on('error', reject)
-        .run();
-    });
-    const videoBase64 = fs.readFileSync(outputPath).toString('base64');
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    fs.unlinkSync(audioSrcPath);
-    res.json({ status: 'ok', video: `data:video/mp4;base64,${videoBase64}` });
-  } catch (err) {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    res.status(500).json({ error: err.message });
+app.get('/result/:jobId', (req, res) => {
+  const resultPath = `/tmp/result_${req.params.jobId}.json`;
+  if (!fs.existsSync(resultPath)) {
+    return res.json({ status: 'processing' });
   }
+  const result = JSON.parse(fs.readFileSync(resultPath, 'utf8'));
+  fs.unlinkSync(resultPath);
+  res.json(result);
 });
 
 app.post('/compose', async (req, res) => {
