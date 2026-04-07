@@ -49,7 +49,13 @@ app.post('/compose-from-comfyui', async (req, res) => {
       fs.writeFileSync(imgPath, Buffer.from(images[i], 'base64'));
     }
     const audioPath = path.join(tmpDir, 'audio.wav');
-    fs.writeFileSync(audioPath, Buffer.from(audio.replace(/^data:audio\/\w+;base64,/, ''), 'base64'));
+    let audioBuffer;
+if (typeof audio === 'string') {
+  audioBuffer = Buffer.from(audio.replace(/^data:audio\/\w+;base64,/, ''), 'base64');
+} else {
+  audioBuffer = Buffer.from(audio);
+}
+fs.writeFileSync(audioPath, audioBuffer);
     const outputPath = path.join(tmpDir, 'output.mp4');
     const [width, height] = resolution.split('x').map(Number);
     await new Promise((resolve, reject) => {
