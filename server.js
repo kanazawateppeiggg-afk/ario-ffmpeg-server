@@ -79,6 +79,7 @@ app.post('/compose-from-comfyui', async (req, res) => {
       for (const img of (outputs[nodeId].images || [])) {
         const imgRes = await axios.get(`${comfyui_url}/view?filename=${img.filename}&subfolder=${img.subfolder}&type=${img.type}`, { responseType: 'arraybuffer' });
         images.push(Buffer.from(imgRes.data).toString('base64'));
+        console.log('image downloaded, size:', imgRes.data.byteLength);
       }
     }
 
