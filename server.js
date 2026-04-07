@@ -57,13 +57,22 @@ app.post('/compose-from-comfyui', async (req, res) => {
   const tmpDir = `/tmp/job_${jobId}`;
   try {
     fs.mkdirSync(tmpDir, { recursive: true });
-    const { prompt_id, comfyui_url, audio_job_id, fps = 8, resolution = '854x480' } = req.body;
+   const { prompt_id, comfyui_url, audio_job_id, audio, fps = 8, resolution = '854x480' } = req.body;
     if (!prompt_id || !comfyui_url) return res.status(400).json({ error: 'prompt_id と comfyui_url が必要です' });
-    if (!audio_job_id) return res.status(400).json({ error: 'audio_job_id が必要です' });
+    if (!audio_job_id && !audio) return res.status(400).json({ error: 'audio_job_id か audio が必要です' });
 
-    // 一時保存した音声を取得
-    const audioSrcPath = `/tmp/audio/${audio_job_id}.wav`;
-    if (!fs.existsSync(audioSrcPath)) return res.status(400).json({ error: 'audio_job_id が無効か期限切れです' });
+    // 音声ファイルのパスを決定
+    let audioSrcPath;
+    if (audio_job_id) {
+      audioSrcPath = `/tmp/audio/${audio_job_id}.wav`;
+      if (!fs.existsSync(audioSrcPath)) return res.status(400).json({ error: 'audio_job_id が無効か期限切れです' });
+    } else {
+      audioSrcPath = `/tmp/audio/inline_${uuidv4()}.wav`;
+      fs.mkdirSync('/tmp/audio', { recursive: true });
+      const base64Data = audio.replace(/^data:audio\/\w+;base64,/, '');
+      fs.writeFileSync(audioSrcPath, Buffer.from(base64Data, 'base64'));
+      console.log('inline audio saved, size:', fs.statSync(audioSrcPath).size);
+    }
 
     let historyRes;
     for (let attempt = 0; attempt < 30; attempt++) {
