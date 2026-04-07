@@ -45,6 +45,7 @@ app.post('/upload-audio', express.raw({ type: '*/*', limit: '10mb' }), async (re
     fs.mkdirSync(audioDir, { recursive: true });
     const audioPath = path.join(audioDir, `${jobId}.wav`);
     fs.writeFileSync(audioPath, req.body);
+    console.log('saved audio size:', fs.statSync(audioPath).size);
     res.json({ status: 'ok', job_id: jobId });
   } catch (err) {
     res.status(500).json({ error: err.message });
