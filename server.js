@@ -35,9 +35,9 @@ app.get('/', (req, res) => {
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
-
 // 音声を一時保存してjob_idを返す
-app.post('/upload-audio', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
+app.post('/upload-audio', express.raw({ type: '*/*', limit: '10mb' }), async (req, res) => {
+  console.log('upload-audio body length:', req.body ? req.body.length : 'null/undefined');
   try {
     if (!req.body || req.body.length === 0) return res.status(400).json({ error: 'audio data が必要です' });
     const jobId = uuidv4();
