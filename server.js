@@ -90,14 +90,14 @@ app.post('/compose-from-comfyui', async (req, res) => {
       const images = [];
       for (const nodeId of Object.keys(outputs)) {
         for (const img of (outputs[nodeId].images || [])) {
-          const imgRes = await axios.get(`${comfyui_url}/view?filename=${img.filename}&subfolder=${img.subfolder}&type=${img.type}`, { responseType: 'arraybuffer' });
+          const imgRes = await axios.get(`${comfyui_url}/view?filename=${img.filename}&subfolder=${img.subfolder}&type=${img.type}`, { responseType: 'arraybuffer', decompress: false });
           images.push(Buffer.from(imgRes.data).toString('base64'));
           console.log('image downloaded, size:', imgRes.data.byteLength);
         }
       }
 
       for (let i = 0; i < images.length; i++) {
-        const imgPath = path.join(tmpDir, `frame_${String(i).padStart(4, '0')}.jpg`);
+        const imgPath = path.join(tmpDir, `frame_${String(i).padStart(4, '0')}.png`);
         fs.writeFileSync(imgPath, Buffer.from(images[i], 'base64'));
       }
 
