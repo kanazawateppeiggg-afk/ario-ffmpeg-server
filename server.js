@@ -108,7 +108,7 @@ app.post('/compose-from-comfyui', async (req, res) => {
       const [width, height] = resolution.split('x').map(Number);
       await new Promise((resolve, reject) => {
         ffmpeg()
-          .input(path.join(tmpDir, 'frame_%04d.jpg'))
+          .input(path.join(tmpDir, 'frame_%04d.png'))
           .inputOptions([`-framerate ${fps}`])
           .input(audioPath)
           .outputOptions([
@@ -165,7 +165,7 @@ app.post('/compose', async (req, res) => {
     const [width, height] = resolution.split('x').map(Number);
     await new Promise((resolve, reject) => {
       ffmpeg()
-        .input(path.join(tmpDir, 'frame_%04d.jpg'))
+        .input(path.join(tmpDir, 'frame_%04d.png'))
         .inputOptions([`-framerate ${fps}`])
         .input(audioPath)
         .outputOptions([
