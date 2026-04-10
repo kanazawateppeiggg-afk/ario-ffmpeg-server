@@ -215,5 +215,16 @@ app.post('/thumbnail', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
+app.get('/download-latest', (req, res) => {
+  const files = require('fs').readdirSync('/tmp').filter(f => f.startsWith('result_') && f.endsWith('.json'));
+  if (files.length === 0) return res.status(404).json({ error: 'no result found' });
+  const latest = files.sort().reverse()[0];
+  const result = JSON.parse(require('fs').readFileSync(`/tmp/${latest}`, 'utf8'));
+  if (!result.video) return res.status(404).json({ error: 'no video in result' });
+  const base64Data = result.video.replace(/^data:video\/mp4;base64,/, '');
+  const buf = Buffer.from(base64Data, 'base64');
+  res.setHeader('Content-Type', 'video/mp4');
+  res.setHeader('Content-Disposition', 'attachment; filename="output.mp4"');
+  res.send(buf);
+});
 app.listen(PORT, () => console.log(`FFmpeg server running on port ${PORT}`));
