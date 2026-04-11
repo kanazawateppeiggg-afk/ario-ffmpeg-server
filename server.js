@@ -143,8 +143,15 @@ app.get('/result/:jobId', (req, res) => {
     return res.json({ status: 'processing' });
   }
   const result = JSON.parse(fs.readFileSync(resultPath, 'utf8'));
+  if (result.status === 'error') {
+    fs.unlinkSync(resultPath);
+    return res.json(result);
+  }
+  const base64Data = result.video.replace(/^data:video\/mp4;base64,/, '');
+  const buf = Buffer.from(base64Data, 'base64');
   fs.unlinkSync(resultPath);
-  res.json(result);
+  res.setHeader('Content-Type', 'video/mp4');
+  res.send(buf);
 });
 
 app.post('/compose', async (req, res) => {
