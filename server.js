@@ -92,7 +92,7 @@ app.post('/compose-from-comfyui', async (req, res) => {
         for (const img of (outputs[nodeId].images || [])) {
           const imgRes = await axios.get(`${comfyui_url}/view?filename=${img.filename}&subfolder=${img.subfolder}&type=${img.type}`, { responseType: 'arraybuffer', decompress: false });
           const imgBase64 = Buffer.from(imgRes.data).toString('base64');
-for (let i = 0; i < 20; i++) images.push(imgBase64);
+          for (let i = 0; i < 20; i++) images.push(imgBase64);
           console.log('image downloaded, size:', imgRes.data.byteLength);
         }
       }
@@ -222,6 +222,7 @@ app.post('/thumbnail', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 app.get('/download-latest', (req, res) => {
   const files = require('fs').readdirSync('/tmp').filter(f => f.startsWith('result_') && f.endsWith('.json'));
   if (files.length === 0) return res.status(404).json({ error: 'no result found' });
@@ -234,19 +235,28 @@ app.get('/download-latest', (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename="output.mp4"');
   res.send(buf);
 });
+
 app.post('/merge-parts', async (req, res) => {
   const jobId = uuidv4();
   const tmpDir = `/tmp/merge_${jobId}`;
   try {
     fs.mkdirSync(tmpDir, { recursive: true });
-    const { folder_id, access_token } = req.body;
-    if (!folder_id || !access_token) return res.status(400).json({ error: 'folder_id と access_token が必要です' });
+    const { folder_id } = req.body;
+    if (!folder_id) return res.status(400).json({ error: 'folder_id が必要です' });
+
+    const tokenRes = await axios.post('https://oauth2.googleapis.com/token', {
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+      grant_type: 'refresh_token'
+    });
+    const access_token = tokenRes.data.access_token;
 
     const listRes = await axios.get(
       `https://www.googleapis.com/drive/v3/files?q='${folder_id}'+in+parents+and+trashed=false&orderBy=name&fields=files(id,name)`,
       { headers: { Authorization: `Bearer ${access_token}` } }
     );
-    const files = listRes.data.files.filter(f => f.name.match(/^part_\d+\.mp4$/)).sort((a,b) => a.name.localeCompare(b.name));
+    const files = listRes.data.files.filter(f => f.name.match(/^part_\d+\.mp4$/)).sort((a, b) => a.name.localeCompare(b.name));
     if (files.length !== 5) return res.status(400).json({ error: `mp4ファイルが5個ありません: ${files.length}個` });
 
     const listPath = path.join(tmpDir, 'list.txt');
@@ -282,4 +292,5 @@ app.post('/merge-parts', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 app.listen(PORT, () => console.log(`FFmpeg server running on port ${PORT}`));
