@@ -239,17 +239,29 @@ app.post('/merge-parts', async (req, res) => {
   const tmpDir = `/tmp/merge_${jobId}`;
   try {
     fs.mkdirSync(tmpDir, { recursive: true });
-    const { parts } = req.body;
-    if (!parts || parts.length === 0) return res.status(400).json({ error: 'parts が必要です' });
+    const { folder_id, access_token } = req.body;
+    if (!folder_id || !access_token) return res.status(400).json({ error: 'folder_id と access_token が必要です' });
+
+    const listRes = await axios.get(
+      `https://www.googleapis.com/drive/v3/files?q='${folder_id}'+in+parents+and+trashed=false&orderBy=name&fields=files(id,name)`,
+      { headers: { Authorization: `Bearer ${access_token}` } }
+    );
+    const files = listRes.data.files.filter(f => f.name.match(/^part_\d+\.mp4$/)).sort((a,b) => a.name.localeCompare(b.name));
+    if (files.length !== 5) return res.status(400).json({ error: `mp4ファイルが5個ありません: ${files.length}個` });
+
     const listPath = path.join(tmpDir, 'list.txt');
     let listContent = '';
-    for (let i = 0; i < parts.length; i++) {
+    for (let i = 0; i < files.length; i++) {
       const partPath = path.join(tmpDir, `part_${i}.mp4`);
-      const base64Data = parts[i].replace(/^data:video\/mp4;base64,/, '');
-      fs.writeFileSync(partPath, Buffer.from(base64Data, 'base64'));
+      const dlRes = await axios.get(
+        `https://www.googleapis.com/drive/v3/files/${files[i].id}?alt=media`,
+        { headers: { Authorization: `Bearer ${access_token}` }, responseType: 'arraybuffer' }
+      );
+      fs.writeFileSync(partPath, Buffer.from(dlRes.data));
       listContent += `file '${partPath}'\n`;
     }
     fs.writeFileSync(listPath, listContent);
+
     const outputPath = path.join(tmpDir, 'merged.mp4');
     await new Promise((resolve, reject) => {
       ffmpeg()
@@ -261,6 +273,7 @@ app.post('/merge-parts', async (req, res) => {
         .on('error', reject)
         .run();
     });
+
     const videoBase64 = fs.readFileSync(outputPath).toString('base64');
     fs.rmSync(tmpDir, { recursive: true, force: true });
     res.json({ status: 'ok', video: `data:video/mp4;base64,${videoBase64}` });
