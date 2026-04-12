@@ -241,9 +241,9 @@ app.post('/merge-parts', async (req, res) => {
   const tmpDir = `/tmp/merge_${jobId}`;
   try {
     fs.mkdirSync(tmpDir, { recursive: true });
-    const { folder_id } = req.body;
-    if (!folder_id) return res.status(400).json({ error: 'folder_id が必要です' });
-
+    const { folder_id: bodyFolderId } = req.body;
+const folder_id = bodyFolderId || process.env.GOOGLE_DRIVE_FOLDER_ID;
+if (!folder_id) return res.status(400).json({ error: 'folder_id が必要です' });
     const tokenRes = await axios.post('https://oauth2.googleapis.com/token', {
       client_id: process.env.GOOGLE_CLIENT_ID,
       client_secret: process.env.GOOGLE_CLIENT_SECRET,
@@ -256,8 +256,14 @@ app.post('/merge-parts', async (req, res) => {
       `https://www.googleapis.com/drive/v3/files?q='${folder_id}'+in+parents+and+trashed=false&orderBy=name&fields=files(id,name)`,
       { headers: { Authorization: `Bearer ${access_token}` } }
     );
-    const files = listRes.data.files.filter(f => f.name.match(/^part_\d+\.mp4$/)).sort((a, b) => a.name.localeCompare(b.name));
-    if (files.length !== 5) return res.status(400).json({ error: `mp4ファイルが5個ありません: ${files.length}個` });
+    const allFiles = listRes.data.files;
+console.log('Drive files in folder:', JSON.stringify(allFiles.map(f => f.name)));
+const files = allFiles.filter(f => f.name.match(/^part_\d+\.mp4$/)).sort((a, b) => a.name.localeCompare(b.name));
+if (files.length !== 5) return res.status(400).json({
+  error: `mp4ファイルが5個ありません: ${files.length}個`,
+  matched: files.map(f => f.name),
+  all: allFiles.map(f => f.name)
+});
 
     const listPath = path.join(tmpDir, 'list.txt');
     let listContent = '';
