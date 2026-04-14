@@ -258,7 +258,7 @@ if (!folder_id) return res.status(400).json({ error: 'folder_id が必要です'
     );
     const allFiles = listRes.data.files;
 console.log('Drive files in folder:', JSON.stringify(allFiles.map(f => f.name)));
-const files = allFiles.filter(f => f.name.match(/^part_\d+\.mp4$/)).sort((a, b) => a.name.localeCompare(b.name));
+const files = allFiles.filter(f => /^part_[1-5]\.mp4$/i.test(f.name)).sort((a, b) => a.name.localeCompare(b.name));
 if (files.length !== 5) return res.status(400).json({
   error: `mp4ファイルが5個ありません: ${files.length}個`,
   matched: files.map(f => f.name),
