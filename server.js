@@ -139,7 +139,7 @@ app.post('/compose-from-comfyui', async (req, res) => {
 
 app.get('/result/:jobId', async (req, res) => {
   const resultPath = `/tmp/result_${req.params.jobId}.json`;
-  for (let i = 0; i < 90; i++) {
+  for (let i = 0; i < 200; i++) {
     if (fs.existsSync(resultPath)) {
       const result = JSON.parse(fs.readFileSync(resultPath, 'utf8'));
       if (result.status === 'error') {
