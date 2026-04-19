@@ -79,7 +79,7 @@ app.post('/compose-from-comfyui', async (req, res) => {
       }
 
       let historyRes;
-      for (let attempt = 0; attempt < 30; attempt++) {
+      for (let attempt = 0; attempt < 100; attempt++) {
         historyRes = await axios.get(`${comfyui_url}/history/${prompt_id}`);
         if (historyRes.data[prompt_id]?.outputs) break;
         await new Promise(r => setTimeout(r, 3000));
