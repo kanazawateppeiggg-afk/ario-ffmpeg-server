@@ -138,24 +138,21 @@ app.post('/compose-from-comfyui', async (req, res) => {
   }
 });
 
-app.get('/result/:jobId', async (req, res) => {
+app.get('/result/:jobId', (req, res) => {
   const resultPath = `/tmp/result_${req.params.jobId}.json`;
-  for (let i = 0; i < 90; i++) {
-    if (fs.existsSync(resultPath)) {
-      const result = JSON.parse(fs.readFileSync(resultPath, 'utf8'));
-      if (result.status === 'error') {
-        fs.unlinkSync(resultPath);
-        return res.status(500).json(result);
-      }
-      const base64Data = result.video.replace(/^data:video\/mp4;base64,/, '');
-      const buf = Buffer.from(base64Data, 'base64');
-      fs.unlinkSync(resultPath);
-      res.setHeader('Content-Type', 'video/mp4');
-      return res.send(buf);
-    }
-    await new Promise(r => setTimeout(r, 3000));
+  if (!fs.existsSync(resultPath)) {
+    return res.json({ status: 'processing' });
   }
-  res.status(500).json({ error: 'timeout' });
+  const result = JSON.parse(fs.readFileSync(resultPath, 'utf8'));
+  if (result.status === 'error') {
+    fs.unlinkSync(resultPath);
+    return res.json(result);
+  }
+  const base64Data = result.video.replace(/^data:video\/mp4;base64,/, '');
+  const buf = Buffer.from(base64Data, 'base64');
+  fs.unlinkSync(resultPath);
+  res.setHeader('Content-Type', 'video/mp4');
+  res.send(buf);
 });
 
 app.post('/compose', async (req, res) => {
