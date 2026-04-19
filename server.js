@@ -60,10 +60,7 @@ app.post('/compose-from-comfyui', async (req, res) => {
   if (!prompt_id || !comfyui_url) return res.status(400).json({ error: 'prompt_id と comfyui_url が必要です' });
   if (!audio_job_id && !audio) return res.status(400).json({ error: 'audio_job_id か audio が必要です' });
 
-  res.json({ status: 'processing', job_id: jobId });
-
-  (async () => {
-    try {
+  try {
       fs.mkdirSync(tmpDir, { recursive: true });
 
       let audioSrcPath;
@@ -128,13 +125,17 @@ app.post('/compose-from-comfyui', async (req, res) => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
       fs.unlinkSync(audioSrcPath);
       fs.writeFileSync(`/tmp/result_${jobId}.json`, JSON.stringify({ status: 'done', video: `data:video/mp4;base64,${videoBase64}` }));
-      console.log('job done:', jobId);
-    } catch (err) {
+      const buf = fs.readFileSync(outputPath);
       fs.rmSync(tmpDir, { recursive: true, force: true });
-      fs.writeFileSync(`/tmp/result_${jobId}.json`, JSON.stringify({ status: 'error', error: err.message }));
-      console.log('job error:', jobId, err.message);
-    }
-  })();
+      fs.unlinkSync(audioSrcPath);
+      console.log('job done:', jobId, 'size:', buf.length);
+      res.setHeader('Content-Type', 'video/mp4');
+      res.send(buf);
+  } catch (err) {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    console.log('job error:', jobId, err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/result/:jobId', (req, res) => {
