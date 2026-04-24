@@ -124,10 +124,10 @@ app.post('/compose-from-comfyui', async (req, res) => {
           .run();
       });
 
-      const videoBase64 = fs.readFileSync(outputPath).toString('base64');
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      fs.unlinkSync(audioSrcPath);
-      fs.writeFileSync(`/tmp/result_${jobId}.json`, JSON.stringify({ status: 'done', video: `data:video/mp4;base64,${videoBase64}` }));
+const videoBuf = fs.readFileSync(outputPath);
+fs.rmSync(tmpDir, { recursive: true, force: true });
+res.setHeader('Content-Type', 'video/mp4');
+res.send(videoBuf);
       console.log('job done:', jobId);
     } catch (err) {
       fs.rmSync(tmpDir, { recursive: true, force: true });
