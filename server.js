@@ -89,7 +89,8 @@ app.post('/compose-from-comfyui', async (req, res) => {
 
       const images = [];
       for (const nodeId of Object.keys(outputs)) {
-        for (const img of (outputs[nodeId].images || [])) 　
+        for (const img of (outputs[nodeId].images || [])) {
+          const imgRes = await axios.get(`${comfyui_url}/view?filename=${img.filename}&subfolder=${img.subfolder}&type=${img.type}`, { responseType: 'arraybuffer' });
           const imgBase64 = Buffer.from(imgRes.data).toString('base64');
           for (let i = 0; i < 20; i++) images.push(imgBase64);
           console.log('image downloaded, size:', imgRes.data.byteLength);
@@ -123,11 +124,10 @@ app.post('/compose-from-comfyui', async (req, res) => {
           .run();
       });
 
-const videoBuf = fs.readFileSync(outputPath);
-fs.rmSync(tmpDir, { recursive: true, force: true });
-const videoBase64 = videoBuf.toString('base64');
-fs.writeFileSync(`/tmp/result_${jobId}.json`, JSON.stringify({ status: 'done', video: `data:video/mp4;base64,${videoBase64}` }));
-console.log('job done:', jobId);
+      const videoBuf = fs.readFileSync(outputPath);
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      const videoBase64 = videoBuf.toString('base64');
+      fs.writeFileSync(`/tmp/result_${jobId}.json`, JSON.stringify({ status: 'done', video: `data:video/mp4;base64,${videoBase64}` }));
       console.log('job done:', jobId);
     } catch (err) {
       fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -245,8 +245,8 @@ app.post('/merge-parts', async (req, res) => {
   try {
     fs.mkdirSync(tmpDir, { recursive: true });
     const { folder_id: bodyFolderId } = req.body;
-const folder_id = bodyFolderId || process.env.GOOGLE_DRIVE_FOLDER_ID;
-if (!folder_id) return res.status(400).json({ error: 'folder_id が必要です' });
+    const folder_id = bodyFolderId || process.env.GOOGLE_DRIVE_FOLDER_ID;
+    if (!folder_id) return res.status(400).json({ error: 'folder_id が必要です' });
     const tokenRes = await axios.post('https://oauth2.googleapis.com/token', {
       client_id: process.env.GOOGLE_CLIENT_ID,
       client_secret: process.env.GOOGLE_CLIENT_SECRET,
@@ -260,13 +260,13 @@ if (!folder_id) return res.status(400).json({ error: 'folder_id が必要です'
       { headers: { Authorization: `Bearer ${access_token}` } }
     );
     const allFiles = listRes.data.files;
-console.log('Drive files in folder:', JSON.stringify(allFiles.map(f => f.name)));
-const files = allFiles.filter(f => /^part_[1-5]\.mp4$/i.test(f.name)).sort((a, b) => a.name.localeCompare(b.name));
-if (files.length !== 5) return res.status(400).json({
-  error: `mp4ファイルが5個ありません: ${files.length}個`,
-  matched: files.map(f => f.name),
-  all: allFiles.map(f => f.name)
-});
+    console.log('Drive files in folder:', JSON.stringify(allFiles.map(f => f.name)));
+    const files = allFiles.filter(f => /^part_[1-5]\.mp4$/i.test(f.name)).sort((a, b) => a.name.localeCompare(b.name));
+    if (files.length !== 5) return res.status(400).json({
+      error: `mp4ファイルが5個ありません: ${files.length}個`,
+      matched: files.map(f => f.name),
+      all: allFiles.map(f => f.name)
+    });
 
     const listPath = path.join(tmpDir, 'list.txt');
     let listContent = '';
