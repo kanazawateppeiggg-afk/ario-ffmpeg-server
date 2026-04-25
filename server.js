@@ -190,9 +190,21 @@ app.post('/compose', async (req, res) => {
         .on('error', reject)
         .run();
     });
-    const videoBase64 = fs.readFileSync(outputPath).toString('base64');
+    const videoBuffer = fs.readFileSync(outputPath);
     fs.rmSync(tmpDir, { recursive: true, force: true });
-    res.json({ status: 'ok', video: `data:video/mp4;base64,${videoBase64}` });
+
+    const FormData = require('form-data');
+    const form = new FormData();
+    form.append('metadata', JSON.stringify({ name: 'merged.mp4', parents: [folder_id] }), { contentType: 'application/json' });
+    form.append('file', videoBuffer, { filename: 'merged.mp4', contentType: 'video/mp4' });
+
+    const driveUploadRes = await axios.post(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name',
+      form,
+      { headers: { Authorization: `Bearer ${access_token}`, ...form.getHeaders() } }
+    );
+
+    res.json({ status: 'ok', file_id: driveUploadRes.data.id, file_name: driveUploadRes.data.name });
   } catch (err) {
     fs.rmSync(tmpDir, { recursive: true, force: true });
     res.status(500).json({ error: err.message });
@@ -293,9 +305,21 @@ app.post('/merge-parts', async (req, res) => {
         .run();
     });
 
-    const videoBase64 = fs.readFileSync(outputPath).toString('base64');
+    const videoBuffer = fs.readFileSync(outputPath);
     fs.rmSync(tmpDir, { recursive: true, force: true });
-    res.json({ status: 'ok', video: `data:video/mp4;base64,${videoBase64}` });
+
+    const FormData = require('form-data');
+    const form = new FormData();
+    form.append('metadata', JSON.stringify({ name: 'merged.mp4', parents: [folder_id] }), { contentType: 'application/json' });
+    form.append('file', videoBuffer, { filename: 'merged.mp4', contentType: 'video/mp4' });
+
+    const driveUploadRes = await axios.post(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name',
+      form,
+      { headers: { Authorization: `Bearer ${access_token}`, ...form.getHeaders() } }
+    );
+
+    res.json({ status: 'ok', file_id: driveUploadRes.data.id, file_name: driveUploadRes.data.name });
   } catch (err) {
     fs.rmSync(tmpDir, { recursive: true, force: true });
     res.status(500).json({ error: err.message });
