@@ -286,7 +286,7 @@ app.post('/merge-parts', async (req, res) => {
       ffmpeg()
         .input(listPath)
         .inputOptions(['-f concat', '-safe 0'])
-        .outputOptions(['-c copy'])
+        .outputOptions(['-c:v copy', '-c:a aac', '-b:a 128k'])
         .output(outputPath)
         .on('end', resolve)
         .on('error', reject)
